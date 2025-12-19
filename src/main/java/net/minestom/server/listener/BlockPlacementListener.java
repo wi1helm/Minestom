@@ -79,11 +79,11 @@ public class BlockPlacementListener {
             return;
         }
 
-        final Material useMaterial = usedItem.material();
-        if (!useMaterial.isBlock()) {
-            // Player didn't try to place a block but interacted with one
-            PlayerUseItemOnBlockEvent event = new PlayerUseItemOnBlockEvent(player, hand,  interactedBlock, usedItem, blockPosition, cursorPosition, blockFace);
-            EventDispatcher.call(event);
+        // Player didn't try to place a block but interacted with one
+        PlayerUseItemOnBlockEvent event = new PlayerUseItemOnBlockEvent(player, hand,  interactedBlock, usedItem, blockPosition, cursorPosition, blockFace);
+
+        EventDispatcher.call(event);
+        if (event.preventBlockPlacement()) {
             // Ack the block change. This is required to reset the client prediction to the server state.
             player.sendPacket(new AcknowledgeBlockChangePacket(packet.sequence()));
             return;
@@ -100,6 +100,7 @@ public class BlockPlacementListener {
             canPlaceBlock = placePredicate.test(interactedBlock);
         }
 
+        final Material useMaterial = usedItem.material();
 
         // Get the newly placed block position
         //todo it feels like it should be possible to have better replacement rules than this, feels pretty scuffed.

@@ -46,10 +46,11 @@ public class PlayerUseItemOnBlockEvent implements PlayerInstanceEvent, ItemEvent
     }
     /**
      * Gets if the event should prevent block placement.
-     *
+     * For non block items placement is always prevented.
      * @return true if the placement is prevented, false otherwise
      */
-    public boolean isPreventBlockPlacement() {
+    public boolean preventBlockPlacement() {
+        if (!itemStack.material().isBlock()) return true;
         return preventBlockPlacement;
     }
 
