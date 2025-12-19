@@ -325,7 +325,7 @@ public class PlayerInit {
                 if (event.getHand() != PlayerHand.MAIN) return;
 
                 var itemStack = event.getItemStack();
-                var block = event.getInstance().getBlock(event.getPosition());
+                var block = event.getBlock();
 
                 if ("false".equals(block.getProperty("waterlogged")) && itemStack.material().equals(Material.WATER_BUCKET)) {
                     block = block.withProperty("waterlogged", "true");
@@ -333,7 +333,7 @@ public class PlayerInit {
                     block = block.withProperty("waterlogged", "false");
                 } else return;
 
-                event.getInstance().setBlock(event.getPosition(), block);
+                event.getInstance().setBlock(event.getBlockPosition(), block);
 
             })
             .addListener(PlayerBeginItemUseEvent.class, event -> {
