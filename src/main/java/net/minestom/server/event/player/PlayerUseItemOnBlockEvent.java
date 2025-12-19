@@ -24,6 +24,12 @@ public class PlayerUseItemOnBlockEvent implements PlayerInstanceEvent, ItemEvent
     private final BlockFace blockFace;
     private final Block block;
 
+    /**
+     * Does this item usage prevent/stop block placement?
+     * True if block items should not be placed.
+     */
+    private boolean preventBlockPlacement;
+
     public PlayerUseItemOnBlockEvent(Player player, PlayerHand hand,
                                      Block block,
                                      ItemStack itemStack,
@@ -37,6 +43,24 @@ public class PlayerUseItemOnBlockEvent implements PlayerInstanceEvent, ItemEvent
         this.cursorPosition = cursorPosition;
         this.blockFace = blockFace;
 
+    }
+    /**
+     * Gets if the event should prevent block placement.
+     *
+     * @return true if the placement is prevented, false otherwise
+     */
+    public boolean isPreventBlockPlacement() {
+        return preventBlockPlacement;
+    }
+
+    /**
+     * Sets the prevent block placement state of this event
+     * Note: If this is true, then no block placement will be occur.
+     * This exists so that block items have a way of not trying to be placed.
+     * @param prevent - true to block item interactions, false to not block
+     */
+    public void setPreventBlockPlacement(boolean prevent) {
+        this.preventBlockPlacement = prevent;
     }
 
 

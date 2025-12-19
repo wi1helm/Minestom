@@ -24,10 +24,10 @@ public class PlayerBlockInteractEvent implements PlayerInstanceEvent, BlockEvent
     private final BlockFace blockFace;
 
     /**
-     * Does this interaction block the normal item use?
-     * True for containers which open an inventory instead of letting blocks be placed
+     * Does this interaction prevent the normal item use?
+     * True for containers which open an inventory instead of item usage, examples include bone mealing and placing blocks
      */
-    private boolean blocksItemUse;
+    private boolean preventItemUse;
 
     private boolean cancelled;
 
@@ -47,17 +47,17 @@ public class PlayerBlockInteractEvent implements PlayerInstanceEvent, BlockEvent
      *
      * @return true if the item use is blocked, false otherwise
      */
-    public boolean isBlockingItemUse() {
-        return blocksItemUse;
+    public boolean preventItemUse() {
+        return preventItemUse;
     }
 
     /**
      * Sets the blocking item use state of this event
      * Note: If this is true, then no {@link PlayerUseItemOnBlockEvent} will be fired.
-     * @param blocks - true to block item interactions, false to not block
+     * @param prevent - true to block item interactions, false to not block
      */
-    public void setBlockingItemUse(boolean blocks) {
-        this.blocksItemUse = blocks;
+    public void setPreventItemUse(boolean prevent) {
+        this.preventItemUse = prevent;
     }
 
     @Override

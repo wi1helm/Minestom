@@ -35,6 +35,12 @@ import net.minestom.server.world.DimensionType;
 public class BlockPlacementListener {
     private static final BlockManager BLOCK_MANAGER = MinecraftServer.getBlockManager();
 
+    enum InteractResult {
+        PASS,
+        CONSUME,
+        CANCEL
+    }
+
     public static void listener(ClientPlayerBlockPlacementPacket packet, Player player) {
         final PlayerHand hand = packet.hand();
         final BlockFace blockFace = packet.blockFace();
@@ -53,14 +59,13 @@ public class BlockPlacementListener {
 
         final ItemStack usedItem = player.getItemInHand(hand);
         final Block interactedBlock = instance.getBlock(blockPosition);
-
         final Point cursorPosition = new Vec(packet.cursorPositionX(), packet.cursorPositionY(), packet.cursorPositionZ());
 
         // Interact at block
         // FIXME: onUseOnBlock
         PlayerBlockInteractEvent playerBlockInteractEvent = new PlayerBlockInteractEvent(player, hand, interactedBlock, new BlockVec(blockPosition), cursorPosition, blockFace);
         EventDispatcher.call(playerBlockInteractEvent);
-        boolean blockUse = playerBlockInteractEvent.isBlockingItemUse();
+        boolean blockUse = playerBlockInteractEvent.preventItemUse();
         if (!playerBlockInteractEvent.isCancelled()) {
             final var handler = interactedBlock.handler();
             if (handler != null) {
