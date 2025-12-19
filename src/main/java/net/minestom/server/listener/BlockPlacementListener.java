@@ -35,10 +35,48 @@ import net.minestom.server.world.DimensionType;
 public class BlockPlacementListener {
     private static final BlockManager BLOCK_MANAGER = MinecraftServer.getBlockManager();
 
-    enum InteractResult {
+    private enum InteractResult {
         PASS,
         CONSUME,
-        CANCEL
+        FAIL
+    }
+    /*
+    * This handles when a player interacts with a block.
+    * Vanilla cases involves (opening containers, opening doors, flickering levers, etc.)
+    * Handles PlayerBlockInteractEvent and blockhandler.onInteract()
+    */
+    private static InteractResult interactBlock(Player player, PlayerHand hand, Block block, BlockVec blockPosition, Point cursorPosition, BlockFace face) {
+        PlayerBlockInteractEvent event = new PlayerBlockInteractEvent(player, hand, block, blockPosition, cursorPosition, face);
+        EventDispatcher.call(event);
+
+        BlockHandler handler = block.handler();
+
+        boolean preventItemUse = event.preventItemUse();
+
+        if (!event.isCancelled() && handler != null) {
+            preventItemUse |= !handler.onInteract(new BlockHandler.Interaction(block, player.getInstance(), face, blockPosition, cursorPosition, player, hand));
+        }
+
+        return preventItemUse
+                ? InteractResult.CONSUME
+                : InteractResult.PASS;
+
+    }
+    /*
+    * This handles when a player uses and item on a block
+    * Vanilla cases involves (bone mealing grass, flint and steel, fire chargers, etc.)
+    *
+    *
+    */
+    private static InteractResult useItemOnBlock(Player player, PlayerHand hand, Block block, ItemStack itemStack, BlockVec blockPosition, Point cursorPosition, BlockFace face) {
+        // Player didn't try to place a block but interacted with one
+        PlayerUseItemOnBlockEvent event = new PlayerUseItemOnBlockEvent(player, hand,  block, itemStack, blockPosition, cursorPosition, face);
+        EventDispatcher.call(event);
+
+        // If itemstack is non block event.preventBlockplacement is true.
+        if (event.preventBlockPlacement()) return InteractResult.CONSUME;
+
+        return  InteractResult.PASS;
     }
 
     public static void listener(ClientPlayerBlockPlacementPacket packet, Player player) {
@@ -61,29 +99,18 @@ public class BlockPlacementListener {
         final Block interactedBlock = instance.getBlock(blockPosition);
         final Point cursorPosition = new Vec(packet.cursorPositionX(), packet.cursorPositionY(), packet.cursorPositionZ());
 
-        // Interact at block
-        // FIXME: onUseOnBlock
-        PlayerBlockInteractEvent playerBlockInteractEvent = new PlayerBlockInteractEvent(player, hand, interactedBlock, new BlockVec(blockPosition), cursorPosition, blockFace);
-        EventDispatcher.call(playerBlockInteractEvent);
-        boolean blockUse = playerBlockInteractEvent.preventItemUse();
-        if (!playerBlockInteractEvent.isCancelled()) {
-            final var handler = interactedBlock.handler();
-            if (handler != null) {
-                blockUse |= !handler.onInteract(new BlockHandler.Interaction(interactedBlock, instance, blockFace, blockPosition, cursorPosition, player, hand));
-            }
-        }
-        if (blockUse) {
+        InteractResult interactResult = interactBlock(player, hand, interactedBlock, blockPosition.asBlockVec(), cursorPosition, blockFace);
+
+        if (interactResult == InteractResult.CONSUME) {
             // If the usage was blocked then the world is already up-to-date (from the prior handlers),
             // So ack the change with the current world state.
             player.sendPacket(new AcknowledgeBlockChangePacket(packet.sequence()));
             return;
         }
 
-        // Player didn't try to place a block but interacted with one
-        PlayerUseItemOnBlockEvent event = new PlayerUseItemOnBlockEvent(player, hand,  interactedBlock, usedItem, blockPosition, cursorPosition, blockFace);
+        InteractResult usageResult = useItemOnBlock(player, hand, interactedBlock, usedItem, blockPosition.asBlockVec(), cursorPosition, blockFace);
 
-        EventDispatcher.call(event);
-        if (event.preventBlockPlacement()) {
+        if (usageResult == InteractResult.CONSUME) {
             // Ack the block change. This is required to reset the client prediction to the server state.
             player.sendPacket(new AcknowledgeBlockChangePacket(packet.sequence()));
             return;
@@ -106,8 +133,7 @@ public class BlockPlacementListener {
         //todo it feels like it should be possible to have better replacement rules than this, feels pretty scuffed.
         Point placementPosition = blockPosition;
         var interactedPlacementRule = BLOCK_MANAGER.getBlockPlacementRule(interactedBlock);
-        if (!interactedBlock.isAir() && (interactedPlacementRule == null || !interactedPlacementRule.isSelfReplaceable(
-                new BlockPlacementRule.Replacement(interactedBlock, blockFace, cursorPosition, false, useMaterial)))) {
+        if (!interactedBlock.isAir() && (interactedPlacementRule == null || !interactedPlacementRule.isSelfReplaceable(new BlockPlacementRule.Replacement(interactedBlock, blockFace, cursorPosition, false, useMaterial)))) {
             // If the block is not replaceable, try to place next to it.
             placementPosition = blockPosition.relative(blockFace);
 
