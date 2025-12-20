@@ -124,18 +124,16 @@ public interface BlockHandler {
         private final Player player;
         private final PlayerHand hand;
         private final BlockFace blockFace;
-        private final float cursorX, cursorY, cursorZ;
+        private final Point cursorPosition;
 
         @ApiStatus.Internal
         public PlayerPlacement(Block block, Block previousBlock, Instance instance, Point blockPosition,
-                               Player player, PlayerHand hand, BlockFace blockFace, float cursorX, float cursorY, float cursorZ) {
+                               Player player, PlayerHand hand, BlockFace blockFace, Point cursorPosition) {
             super(block, previousBlock, instance, blockPosition);
             this.player = player;
             this.hand = hand;
             this.blockFace = blockFace;
-            this.cursorX = cursorX;
-            this.cursorY = cursorY;
-            this.cursorZ = cursorZ;
+            this.cursorPosition = cursorPosition;
         }
 
         public Player getPlayer() {
@@ -150,17 +148,7 @@ public interface BlockHandler {
             return blockFace;
         }
 
-        public float getCursorX() {
-            return cursorX;
-        }
-
-        public float getCursorY() {
-            return cursorY;
-        }
-
-        public float getCursorZ() {
-            return cursorZ;
-        }
+        public Point getCursorPosition() {return cursorPosition;}
     }
 
     sealed class Destroy permits PlayerDestroy {

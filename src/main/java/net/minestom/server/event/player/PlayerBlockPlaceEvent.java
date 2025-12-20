@@ -13,7 +13,8 @@ import net.minestom.server.instance.block.BlockFace;
 /**
  * Called when a player tries placing a block.
  */
-public class PlayerBlockPlaceEvent implements PlayerInstanceEvent, BlockEvent, CancellableEvent {
+public class PlayerBlockPlaceEvent
+        implements PlayerInstanceEvent, BlockEvent, CancellableEvent {
 
     private final Player player;
     private Block block;
@@ -22,8 +23,8 @@ public class PlayerBlockPlaceEvent implements PlayerInstanceEvent, BlockEvent, C
     private final Point cursorPosition;
     private final PlayerHand hand;
 
-    private boolean consumeBlock;
-    private boolean doBlockUpdates;
+    private int blockConsumeAmount = 1;
+    private boolean doBlockUpdates = true;
 
     private boolean cancelled;
 
@@ -36,25 +37,15 @@ public class PlayerBlockPlaceEvent implements PlayerInstanceEvent, BlockEvent, C
         this.blockPosition = blockPosition;
         this.cursorPosition = cursorPosition;
         this.hand = hand;
-        this.consumeBlock = true;
-        this.doBlockUpdates = true;
     }
 
-    /**
-     * Gets the block which will be placed.
-     *
-     * @return the block to place
-     */
+    // ---- Block ----
+
     @Override
     public Block getBlock() {
         return block;
     }
 
-    /**
-     * Changes the block to be placed.
-     *
-     * @param block the new block
-     */
     public void setBlock(Block block) {
         this.block = block;
     }
@@ -63,11 +54,6 @@ public class PlayerBlockPlaceEvent implements PlayerInstanceEvent, BlockEvent, C
         return blockFace;
     }
 
-    /**
-     * Gets the block position.
-     *
-     * @return the block position
-     */
     @Override
     public BlockVec getBlockPosition() {
         return blockPosition;
@@ -77,45 +63,42 @@ public class PlayerBlockPlaceEvent implements PlayerInstanceEvent, BlockEvent, C
         return cursorPosition;
     }
 
-    /**
-     * Gets the hand with which the player is trying to place.
-     *
-     * @return the hand used
-     */
     public PlayerHand getHand() {
         return hand;
     }
 
     /**
-     * Should the block be consumed if not cancelled.
-     *
-     * @param consumeBlock true if the block should be consumer (-1 amount), false otherwise
+     * Sets how many blocks should be consumed from the player's inventory.
+     * 0 = do not consume any blocks.
+     * @param amount the amount to consume
      */
-    public void consumeBlock(boolean consumeBlock) {
-        this.consumeBlock = consumeBlock;
+    public void setBlockConsumeAmount(int amount) {
+        if (amount < 0) {
+            amount = 0;
+        }
+        this.blockConsumeAmount = amount;
     }
 
     /**
-     * Should the block be consumed if not cancelled.
+     * Gets how many blocks will be consumed.
      *
-     * @return true if the block will be consumed, false otherwise
+     * @return the consume amount (0 = no consumption)
+     */
+    public int getBlockConsumeAmount() {
+        return blockConsumeAmount;
+    }
+
+    /**
+     * @return true if at least one block will be consumed
      */
     public boolean doesConsumeBlock() {
-        return consumeBlock;
+        return blockConsumeAmount > 0;
     }
 
-    /**
-     * Should the place trigger updates (on self and neighbors)
-     * @param doBlockUpdates true if this placement should do block updates
-     */
     public void setDoBlockUpdates(boolean doBlockUpdates) {
         this.doBlockUpdates = doBlockUpdates;
     }
 
-    /**
-     * Should the place trigger updates (on self and neighbors)
-     * @return true if this placement should do block updates
-     */
     public boolean shouldDoBlockUpdates() {
         return doBlockUpdates;
     }

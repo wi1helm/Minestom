@@ -79,6 +79,7 @@ public class BlockPlacementListener {
         return  InteractResult.PASS;
     }
 
+
     public static void listener(ClientPlayerBlockPlacementPacket packet, Player player) {
         final PlayerHand hand = packet.hand();
         final BlockFace blockFace = packet.blockFace();
@@ -189,29 +190,31 @@ public class BlockPlacementListener {
         }
 
         // BlockPlaceEvent check
-        PlayerBlockPlaceEvent playerBlockPlaceEvent = new PlayerBlockPlaceEvent(player, placedBlock, blockFace, new BlockVec(placementPosition), cursorPosition, packet.hand());
-        playerBlockPlaceEvent.consumeBlock(player.getGameMode() != GameMode.CREATIVE);
+        PlayerBlockPlaceEvent playerBlockPlaceEvent = new PlayerBlockPlaceEvent(player, placedBlock, blockFace, placementPosition.asBlockVec(), cursorPosition, hand);
+        if (player.getGameMode() == GameMode.CREATIVE) playerBlockPlaceEvent.setBlockConsumeAmount(0);
+
         playerBlockPlaceEvent.setDoBlockUpdates(blockState.equals(useMaterial.prototype().get(DataComponents.BLOCK_STATE, ItemBlockState.EMPTY)));
         EventDispatcher.call(playerBlockPlaceEvent);
+
         if (playerBlockPlaceEvent.isCancelled()) {
             refresh(player, chunk);
             return;
         }
+        // Get the result block as event can change it.
+        final Block resultBlock = playerBlockPlaceEvent.getBlock();
+        final Block previousBlock = instance.getBlock(placementPosition);
 
-        // Place the block
-        Block resultBlock = playerBlockPlaceEvent.getBlock();
-        instance.placeBlock(new BlockHandler.PlayerPlacement(resultBlock, instance.getBlock(placementPosition), instance, placementPosition, player, hand, blockFace,
-                packet.cursorPositionX(), packet.cursorPositionY(), packet.cursorPositionZ()), playerBlockPlaceEvent.shouldDoBlockUpdates());
+        instance.placeBlock(new BlockHandler.PlayerPlacement(resultBlock, previousBlock, instance, placementPosition, player, hand, blockFace, cursorPosition));
         player.sendPacket(new AcknowledgeBlockChangePacket(packet.sequence()));
         // Block consuming
-        if (playerBlockPlaceEvent.doesConsumeBlock()) {
-            // Consume the block in the player's hand
-            final ItemStack newUsedItem = usedItem.consume(1);
-            player.setItemInHand(hand, newUsedItem);
-        } else {
+        if (!playerBlockPlaceEvent.doesConsumeBlock()) {
             // Prevent invisible item on client
             player.getInventory().update();
+            return;
         }
+        // Consume the block in the player's hand
+        final ItemStack newUsedItem = usedItem.consume(playerBlockPlaceEvent.getBlockConsumeAmount());
+        player.setItemInHand(hand, newUsedItem);
     }
 
     private static void refresh(Player player, Chunk chunk) {

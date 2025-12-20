@@ -36,7 +36,7 @@ final class BlockCollision {
         return stepPhysics(boundingBox, velocity, entityPosition, getter, singleCollision);
     }
 
-    static Entity canPlaceBlockAt(Instance instance, Point blockPos, Block b) {
+    static @Nullable Entity canPlaceBlockAt(Instance instance, Point blockPos, Block b) {
         for (Entity entity : instance.getNearbyEntities(blockPos, 3)) {
             if (!entity.preventBlockPlacement())
                 continue;
