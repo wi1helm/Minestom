@@ -4,29 +4,33 @@ import net.minestom.server.coordinate.BlockVec;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.trait.BlockEvent;
 import net.minestom.server.event.trait.CancellableEvent;
+import net.minestom.server.event.trait.ItemEvent;
 import net.minestom.server.event.trait.PlayerInstanceEvent;
 import net.minestom.server.instance.block.Block;
 import net.minestom.server.instance.block.BlockFace;
+import net.minestom.server.item.ItemStack;
+import org.jetbrains.annotations.Nullable;
 
-public class PlayerBlockBreakEvent implements PlayerInstanceEvent, BlockEvent, CancellableEvent {
+public class PlayerBlockBreakEvent implements PlayerInstanceEvent, BlockEvent, ItemEvent, CancellableEvent {
 
     private final Player player;
     private final Block block;
     private Block resultBlock;
     private final BlockVec blockPosition;
     private final BlockFace blockFace;
+    private final ItemStack itemUsed;
 
     private boolean cancelled;
 
     public PlayerBlockBreakEvent(Player player,
                                  Block block, Block resultBlock, BlockVec blockPosition,
-                                 BlockFace blockFace) {
+                                 BlockFace blockFace, ItemStack itemUsed) {
         this.player = player;
-
         this.block = block;
         this.resultBlock = resultBlock;
         this.blockPosition = blockPosition;
         this.blockFace = blockFace;
+        this.itemUsed = itemUsed;
     }
 
     /**
@@ -89,5 +93,15 @@ public class PlayerBlockBreakEvent implements PlayerInstanceEvent, BlockEvent, C
     @Override
     public Player getPlayer() {
         return player;
+    }
+
+    /**
+     * Gets the item the player used to break the block.
+     *
+     * @return the used item
+     */
+    @Override
+    public ItemStack getItemStack() {
+        return itemUsed;
     }
 }
