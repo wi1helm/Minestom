@@ -5,6 +5,7 @@ import net.minestom.server.collision.CollisionUtils;
 import net.minestom.server.component.DataComponents;
 import net.minestom.server.coordinate.BlockVec;
 import net.minestom.server.coordinate.Point;
+import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.GameMode;
@@ -31,9 +32,13 @@ import net.minestom.server.network.packet.server.play.BlockChangePacket;
 import net.minestom.server.utils.chunk.ChunkUtils;
 import net.minestom.server.utils.validate.Check;
 import net.minestom.server.world.DimensionType;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class BlockPlacementListener {
     private static final BlockManager BLOCK_MANAGER = MinecraftServer.getBlockManager();
+
+
 
     private enum InteractResult {
         PASS,
@@ -45,16 +50,16 @@ public class BlockPlacementListener {
     * Vanilla cases involves (opening containers, opening doors, flickering levers, etc.)
     * Handles PlayerBlockInteractEvent and blockhandler.onInteract()
     */
-    private static InteractResult interactBlock(Player player, PlayerHand hand, Block block, BlockVec blockPosition, Point cursorPosition, BlockFace face) {
-        PlayerBlockInteractEvent event = new PlayerBlockInteractEvent(player, hand, block, blockPosition, cursorPosition, face);
+    private static InteractResult interactBlock(BlockPlacementContext context) {
+        PlayerBlockInteractEvent event = new PlayerBlockInteractEvent(context.player, context.hand, context.targetBlock, context.targetPosition.asBlockVec(), context.cursorPosition, context.targetFace);
         EventDispatcher.call(event);
 
-        BlockHandler handler = block.handler();
+        BlockHandler handler = context.targetBlock.handler();
 
         boolean preventItemUse = event.preventItemUse();
 
         if (!event.isCancelled() && handler != null) {
-            preventItemUse |= !handler.onInteract(new BlockHandler.Interaction(block, player.getInstance(), face, blockPosition, cursorPosition, player, hand));
+            preventItemUse |= !handler.onInteract(new BlockHandler.Interaction(context.targetBlock, context.instance, context.targetFace, context.targetPosition, context.cursorPosition, context.player, context.hand));
         }
 
         return preventItemUse
@@ -68,9 +73,9 @@ public class BlockPlacementListener {
     *
     *
     */
-    private static InteractResult useItemOnBlock(Player player, PlayerHand hand, Block block, ItemStack itemStack, BlockVec blockPosition, Point cursorPosition, BlockFace face) {
+    private static InteractResult useItemOnBlock(BlockPlacementContext context) {
         // Player didn't try to place a block but interacted with one
-        PlayerUseItemOnBlockEvent event = new PlayerUseItemOnBlockEvent(player, hand,  block, itemStack, blockPosition, cursorPosition, face);
+        PlayerUseItemOnBlockEvent event = new PlayerUseItemOnBlockEvent(context.player, context.hand,  context.targetBlock, context.heldItem, context.targetPosition, context.cursorPosition, context.targetFace);
         EventDispatcher.call(event);
 
         // If itemstack is non block event.preventBlockplacement is true.
@@ -81,27 +86,12 @@ public class BlockPlacementListener {
 
 
     public static void listener(ClientPlayerBlockPlacementPacket packet, Player player) {
-        final PlayerHand hand = packet.hand();
-        final BlockFace blockFace = packet.blockFace();
-        Point blockPosition = packet.blockPosition();
+        if (player.getInstance() == null) return;
+        if (!ChunkUtils.isLoaded(player.getInstance(), packet.blockPosition())) return;
 
-        final Instance instance = player.getInstance();
-        if (instance == null)
-            return;
+        final BlockPlacementContext context = new BlockPlacementContext(packet, player);
 
-        // Prevent outdated/modified client data
-        final Chunk interactedChunk = instance.getChunkAt(blockPosition);
-        if (!ChunkUtils.isLoaded(interactedChunk)) {
-            // Client tried to place a block in an unloaded chunk, ignore the request
-            return;
-        }
-
-        final ItemStack usedItem = player.getItemInHand(hand);
-        final Block interactedBlock = instance.getBlock(blockPosition);
-        final Point cursorPosition = new Vec(packet.cursorPositionX(), packet.cursorPositionY(), packet.cursorPositionZ());
-
-        InteractResult interactResult = interactBlock(player, hand, interactedBlock, blockPosition.asBlockVec(), cursorPosition, blockFace);
-
+        InteractResult interactResult = interactBlock(context);
         if (interactResult == InteractResult.CONSUME) {
             // If the usage was blocked then the world is already up-to-date (from the prior handlers),
             // So ack the change with the current world state.
@@ -109,7 +99,7 @@ public class BlockPlacementListener {
             return;
         }
 
-        InteractResult usageResult = useItemOnBlock(player, hand, interactedBlock, usedItem, blockPosition.asBlockVec(), cursorPosition, blockFace);
+        InteractResult usageResult = useItemOnBlock(context);
 
         if (usageResult == InteractResult.CONSUME) {
             // Ack the block change. This is required to reset the client prediction to the server state.
@@ -117,32 +107,16 @@ public class BlockPlacementListener {
             return;
         }
 
-
-        final Material useMaterial = usedItem.material();
-
-        // Get the newly placed block position
-        //todo it feels like it should be possible to have better replacement rules than this, feels pretty scuffed.
-        Point placementPosition = blockPosition;
-        var interactedPlacementRule = BLOCK_MANAGER.getBlockPlacementRule(interactedBlock);
-        if (!interactedBlock.isAir() && (interactedPlacementRule == null || !interactedPlacementRule.isSelfReplaceable(new BlockPlacementRule.Replacement(interactedBlock, blockFace, cursorPosition, false, useMaterial)))) {
-            // If the block is not replaceable, try to place next to it.
-            placementPosition = blockPosition.relative(blockFace);
-        }
-
-        final Chunk chunk = instance.getChunkAt(placementPosition);
-        final ItemBlockState blockState = usedItem.get(DataComponents.BLOCK_STATE, ItemBlockState.EMPTY);
-        final Block placedBlock = blockState.apply(useMaterial.block());
-
-        if (!canPlaceBlock(player, usedItem, interactedBlock, blockPosition, blockFace, instance, cursorPosition, useMaterial)) {
+        if (!canPlaceBlock(context)) {
             // Send a block change with the real block in the instance to keep the client in sync,
             // using refreshChunk results in the client not being in sync
             // after rapid invalid block placements
-            final Block block = instance.getBlock(placementPosition);
-            player.sendPacket(new BlockChangePacket(placementPosition, block));
+            final Block block = context.instance.getBlock(context.placementPosition);
+            player.sendPacket(new BlockChangePacket(context.placementPosition, block));
             return;
         }
 
-        placeBlock(player, placedBlock, blockFace, placementPosition, cursorPosition, hand, blockState, useMaterial, chunk, instance, packet, usedItem);
+        placeBlock(context);
     }
 
     private static Point getPlacementPosition(Point blockPosition, Block interactedBlock, BlockFace blockFace, Point cursorPosition, Material useMaterial) {
@@ -156,91 +130,143 @@ public class BlockPlacementListener {
         return blockPosition;
     }
 
-    private static boolean canPlaceBlock(Player player, ItemStack usedItem, Block interactedBlock, Point blockPosition, BlockFace blockFace, Instance instance,  Point cursorPosition, Material useMaterial) {
-        if (player.getGameMode() == GameMode.SPECTATOR) return false;
-        if (player.getGameMode() == GameMode.ADVENTURE) {
+    private static Block getPlacedBlock(ItemStack heldItem, Material heldMaterial) {
+        final ItemBlockState blockState = getItemBlockState(heldItem);
+        return blockState.apply(heldMaterial.block());
+    }
+
+    private static ItemBlockState getItemBlockState(ItemStack heldItem) {
+        return heldItem.get(DataComponents.BLOCK_STATE, ItemBlockState.EMPTY);
+    }
+
+    private static boolean canPlaceBlock(BlockPlacementContext context) {
+        if (context.player.getGameMode() == GameMode.SPECTATOR) return false;
+        if (context.player.getGameMode() == GameMode.ADVENTURE) {
             //Check if the block can be placed on the block
-            BlockPredicates placePredicate = usedItem.get(DataComponents.CAN_PLACE_ON, BlockPredicates.NEVER);
-            if (!placePredicate.test(interactedBlock)) return false;
+            BlockPredicates placePredicate = context.heldItem.get(DataComponents.CAN_PLACE_ON, BlockPredicates.NEVER);
+            if (!placePredicate.test(context.targetBlock)) return false;
         }
 
-        Point placementPosition = getPlacementPosition(blockPosition, interactedBlock, blockFace, cursorPosition, useMaterial);
-
-        var placementBlock = instance.getBlock(placementPosition);
-        var placementRule = BLOCK_MANAGER.getBlockPlacementRule(placementBlock);
-        if (!placementBlock.registry().isReplaceable() && !(placementRule != null && placementRule.isSelfReplaceable(
-                new BlockPlacementRule.Replacement(placementBlock, blockFace, cursorPosition, true, useMaterial)))) {
+        //todo it feels like it should be possible to have better replacement rules than this, feels pretty scuffed.
+        BlockPlacementRule placementRule = BLOCK_MANAGER.getBlockPlacementRule(context.placementBlock);
+        if (!context.placementBlock.registry().isReplaceable() && !(placementRule != null && placementRule.isSelfReplaceable(
+                new BlockPlacementRule.Replacement(context.placementBlock, context.targetFace, context.cursorPosition, true, context.heldMaterial)))) {
             // If the block is still not replaceable, cancel the placement
             return false;
         }
 
-        final DimensionType instanceDim = instance.getCachedDimensionType();
-        if (placementPosition.y() >= instanceDim.maxY() || placementPosition.y() < instanceDim.minY()) {
-            return false;
-        }
+        final DimensionType instanceDim = context.instance.getCachedDimensionType();
+        if (context.placementPosition.y() >= instanceDim.maxY() || context.placementPosition.y() < instanceDim.minY()) return false;
 
         // Ensure that the final placement position is inside the world border.
-        if (!instance.getWorldBorder().inBounds(placementPosition)) {
+        if (!context.instance.getWorldBorder().inBounds(context.placementPosition)) return false;
+
+        Check.stateCondition(!ChunkUtils.isLoaded(context.placementChunk),
+                "A player tried to place a block in the border of a loaded chunk {0}", context.placementPosition);
+        if (context.placementChunk.isReadOnly()) {
+            refresh(context);
             return false;
         }
 
-        final Chunk chunk = instance.getChunkAt(placementPosition);
-        Check.stateCondition(!ChunkUtils.isLoaded(chunk),
-                "A player tried to place a block in the border of a loaded chunk {0}", placementPosition);
-        if (chunk.isReadOnly()) {
-            refresh(player, chunk);
-            return false;
-        }
 
-        final ItemBlockState blockState = usedItem.get(DataComponents.BLOCK_STATE, ItemBlockState.EMPTY);
-        final Block placedBlock = blockState.apply(useMaterial.block());
-
-        Entity collisionEntity = CollisionUtils.canPlaceBlockAt(instance, placementPosition, placedBlock);
+        Entity collisionEntity = CollisionUtils.canPlaceBlockAt(context.instance, context.placementPosition, context.placementBlock);
         if (collisionEntity != null) {
             // If a player is trying to place a block on themselves, the client will send a block change but will not set the block on the client
             // For this reason, the block doesn't need to be updated for the client
 
             // Client also doesn't predict placement of blocks on entities, but we need to refresh for cases where bounding boxes on the server don't match the client
-            if (collisionEntity != player)
-                refresh(player, chunk);
+            if (collisionEntity != context.player)
+                refresh(context);
 
             return false;
         }
 
+
+
         return true;
     }
 
-    private static void placeBlock(Player player, Block placedBlock, BlockFace blockFace, Point placementPosition, Point cursorPosition, PlayerHand hand, ItemBlockState blockState, Material useMaterial, Chunk chunk, Instance instance, ClientPlayerBlockPlacementPacket packet, ItemStack usedItem) {
+    private static void placeBlock(BlockPlacementContext context) {
         // BlockPlaceEvent check
-        PlayerBlockPlaceEvent playerBlockPlaceEvent = new PlayerBlockPlaceEvent(player, placedBlock, blockFace, placementPosition.asBlockVec(), cursorPosition, hand);
-        if (player.getGameMode() == GameMode.CREATIVE) playerBlockPlaceEvent.setBlockConsumeAmount(0);
+        PlayerBlockPlaceEvent playerBlockPlaceEvent = new PlayerBlockPlaceEvent(context.player, context.placementBlock, context.targetFace, context.placementPosition.asBlockVec(), context.cursorPosition, context.hand);
+        if (context.player.getGameMode() == GameMode.CREATIVE) playerBlockPlaceEvent.setBlockConsumeAmount(0);
 
-        playerBlockPlaceEvent.setDoBlockUpdates(blockState.equals(useMaterial.prototype().get(DataComponents.BLOCK_STATE, ItemBlockState.EMPTY)));
+        ItemBlockState blockState = getItemBlockState(context.heldItem);
+
+        playerBlockPlaceEvent.setDoBlockUpdates(blockState.equals(context.heldMaterial.prototype().get(DataComponents.BLOCK_STATE, ItemBlockState.EMPTY)));
         EventDispatcher.call(playerBlockPlaceEvent);
 
         if (playerBlockPlaceEvent.isCancelled()) {
-            refresh(player, chunk);
+            refresh(context);
             return;
         }
         // Get the result block as event can change it.
         final Block resultBlock = playerBlockPlaceEvent.getBlock();
-        final Block previousBlock = instance.getBlock(placementPosition);
+        final Block previousBlock = context.instance.getBlock(context.placementPosition);
 
-        instance.placeBlock(new BlockHandler.PlayerPlacement(resultBlock, previousBlock, instance, placementPosition, player, hand, blockFace, cursorPosition));
-        player.sendPacket(new AcknowledgeBlockChangePacket(packet.sequence()));
+        context.instance.placeBlock(new BlockHandler.PlayerPlacement(resultBlock, previousBlock, context.instance, context.placementPosition, context.player, context.hand, context.targetFace, context.cursorPosition));
+        context.player.sendPacket(new AcknowledgeBlockChangePacket(context.packet.sequence()));
         // Block consuming
         if (!playerBlockPlaceEvent.doesConsumeBlock()) {
             // Prevent invisible item on client
-            player.getInventory().update();
+            context.player.getInventory().update();
             return;
         }
         // Consume the block in the player's hand
-        final ItemStack newUsedItem = usedItem.consume(playerBlockPlaceEvent.getBlockConsumeAmount());
-        player.setItemInHand(hand, newUsedItem);
+        final ItemStack newUsedItem = context.heldItem.consume(playerBlockPlaceEvent.getBlockConsumeAmount());
+        context.player.setItemInHand(context.hand, newUsedItem);
     }
 
-    private static void refresh(Player player, Chunk chunk) {
-        player.getInventory().update();
-        chunk.sendChunk(player);
+    private static void refresh(BlockPlacementContext context) {
+        context.player.getInventory().update();
+        if (context.placementChunk == null) return;
+        context.placementChunk.sendChunk(context.player);
     }
+
+    private static final class BlockPlacementContext {
+
+        final ClientPlayerBlockPlacementPacket packet;
+        final Player player;
+        final PlayerHand hand;
+        final Instance instance;
+
+        final Block targetBlock;
+        final Point targetPosition;
+        final BlockFace targetFace;
+        final Point cursorPosition;
+
+        final ItemStack heldItem;
+        final Material heldMaterial;
+
+        Point placementPosition;
+        Block placementBlock;
+        @Nullable Chunk placementChunk;
+
+
+        BlockPlacementContext(ClientPlayerBlockPlacementPacket packet, Player player) {
+            this.packet = packet;
+            this.player = player;
+            this.hand = packet.hand();
+            this.instance = player.getInstance();
+
+            this.targetPosition = packet.blockPosition();
+            this.targetFace = packet.blockFace();
+            this.cursorPosition = new Pos(packet.cursorPositionX(), packet.cursorPositionY(), packet.cursorPositionZ());
+            this.targetBlock = this.instance.getBlock(this.targetPosition);
+
+            this.heldItem = player.getItemInHand(this.hand);
+            this.heldMaterial = this.heldItem.material();
+
+            this.placementPosition = getPlacementPosition(
+                    this.targetPosition,
+                    this.targetBlock,
+                    this.targetFace,
+                    this.cursorPosition,
+                    this.heldMaterial
+            );
+            this.placementBlock = getPlacedBlock(this.heldItem, this.heldMaterial);
+            this.placementChunk = this.instance.getChunkAt(this.placementPosition);
+        }
+    }
+
 }
